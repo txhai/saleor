@@ -3778,6 +3778,7 @@ enum ProductFieldEnum {
 
 input ProductFilterInput {
   isPublished: Boolean
+  trending: Boolean
   collections: [ID]
   categories: [ID]
   hasCategory: Boolean

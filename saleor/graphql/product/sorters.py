@@ -136,6 +136,7 @@ class ProductOrderField(graphene.Enum):
     DATE = ["updated_at", "name", "slug"]
     TYPE = ["product_type__name", "name", "slug"]
     PUBLISHED = ["is_published", "name", "slug"]
+    TRENDING = ["trending_score"]
 
     @property
     def description(self):
@@ -149,6 +150,7 @@ class ProductOrderField(graphene.Enum):
             ),
             ProductOrderField.DATE.name: "update date",
             ProductOrderField.PUBLISHED.name: "publication status",
+            ProductOrderField.TRENDING.name: "trending_score",
         }
         if self.name in descriptions:
             return f"Sort products by {descriptions[self.name]}."
@@ -158,6 +160,12 @@ class ProductOrderField(graphene.Enum):
     def qs_with_price(queryset: QuerySet) -> QuerySet:
         return queryset.annotate(
             min_variants_price_amount=Min("variants__price_amount")
+        )
+
+    @staticmethod
+    def qs_with_trending(queryset: QuerySet) -> QuerySet:
+        return queryset.annotate(
+            trending_score=Count("variants__order_lines")
         )
 
 
