@@ -5,10 +5,7 @@ from django.db import transaction
 from ...core.permissions import ShippingPermissions
 from ...shipping import models
 from ...shipping.error_codes import ShippingErrorCode
-from ...shipping.utils import (
-    default_shipping_zone_exists,
-    get_countries_without_shipping_zone,
-)
+from ...shipping.utils import default_shipping_zone_exists
 from ..core.mutations import BaseMutation, ModelDeleteMutation, ModelMutation
 from ..core.scalars import Decimal, WeightScalar
 from ..core.types.common import ShippingError
@@ -84,12 +81,7 @@ class ShippingZoneMixin:
             )
 
         cleaned_input = super().clean_input(info, instance, data)
-        cleaned_input = cls.clean_default(instance, cleaned_input)
-        return cleaned_input
-
-    @classmethod
-    def clean_default(cls, instance, data):
-        default = data.get("default")
+        default = cleaned_input.get("default")
         if default:
             if default_shipping_zone_exists(instance.pk):
                 raise ValidationError(
@@ -100,12 +92,11 @@ class ShippingZoneMixin:
                         )
                     }
                 )
-            else:
-                countries = get_countries_without_shipping_zone()
-                data["countries"] = countries
+            elif cleaned_input.get("countries"):
+                cleaned_input["countries"] = []
         else:
-            data["default"] = False
-        return data
+            cleaned_input["default"] = False
+        return cleaned_input
 
     @classmethod
     @transaction.atomic
@@ -122,6 +113,8 @@ class ShippingZoneMixin:
 
 
 class ShippingZoneCreate(ShippingZoneMixin, ModelMutation):
+    shipping_zone = graphene.Field(ShippingZone, description="Created shipping zone.")
+
     class Arguments:
         input = ShippingZoneCreateInput(
             description="Fields required to create a shipping zone.", required=True
@@ -136,6 +129,8 @@ class ShippingZoneCreate(ShippingZoneMixin, ModelMutation):
 
 
 class ShippingZoneUpdate(ShippingZoneMixin, ModelMutation):
+    shipping_zone = graphene.Field(ShippingZone, description="Updated shipping zone.")
+
     class Arguments:
         id = graphene.ID(description="ID of a shipping zone to update.", required=True)
         input = ShippingZoneUpdateInput(

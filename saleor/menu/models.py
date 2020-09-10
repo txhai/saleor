@@ -1,3 +1,4 @@
+from django.contrib.postgres.fields import JSONField
 from django.db import models
 from mptt.managers import TreeManager
 from mptt.models import MPTTModel
@@ -11,6 +12,7 @@ from ..product.models import Category, Collection
 
 class Menu(models.Model):
     name = models.CharField(max_length=128)
+    json_content = JSONField(blank=True, default=dict)
 
     class Meta:
         ordering = ("pk",)
@@ -42,7 +44,7 @@ class MenuItem(MPTTModel, SortableModel):
     translated = TranslationProxy()
 
     class Meta:
-        ordering = ("sort_order", "pk")
+        ordering = ("sort_order",)
         app_label = "menu"
 
     def __str__(self):
@@ -69,7 +71,7 @@ class MenuItemTranslation(models.Model):
     name = models.CharField(max_length=128)
 
     class Meta:
-        ordering = ("language_code", "menu_item", "pk")
+        ordering = ("language_code", "menu_item")
         unique_together = (("language_code", "menu_item"),)
 
     def __repr__(self):

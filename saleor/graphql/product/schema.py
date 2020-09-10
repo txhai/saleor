@@ -84,7 +84,6 @@ from .mutations.products import (
     ProductImageDelete,
     ProductImageReorder,
     ProductImageUpdate,
-    ProductSetAvailabilityForPurchase,
     ProductTypeClearMeta,
     ProductTypeClearPrivateMeta,
     ProductTypeCreate,
@@ -265,7 +264,7 @@ class ProductQueries(graphene.ObjectType):
         if id:
             return graphene.Node.get_node_from_global_id(info, id, Collection)
         if slug:
-            return resolve_collection_by_slug(info, slug=slug)
+            return resolve_collection_by_slug(slug=slug)
 
     def resolve_collections(self, info, **kwargs):
         return resolve_collections(info, **kwargs)
@@ -283,7 +282,7 @@ class ProductQueries(graphene.ObjectType):
         if id:
             return graphene.Node.get_node_from_global_id(info, id, Product)
         if slug:
-            return resolve_product_by_slug(info, slug=slug)
+            return resolve_product_by_slug(slug=slug)
 
     def resolve_products(self, info, **kwargs):
         return resolve_products(info, **kwargs)
@@ -439,8 +438,6 @@ class ProductMutations(graphene.ObjectType):
             "removed after 2020-07-31."
         )
     )
-
-    product_set_availability_for_purchase = ProductSetAvailabilityForPurchase.Field()
 
     product_image_create = ProductImageCreate.Field()
     product_image_delete = ProductImageDelete.Field()

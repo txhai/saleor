@@ -74,19 +74,6 @@ def validate_product_is_published(order):
             )
 
 
-def validate_product_is_available_for_purchase(order):
-    for line in order:
-        if not line.variant.product.is_available_for_purchase():
-            raise ValidationError(
-                {
-                    "lines": ValidationError(
-                        "Can't finalize draft with product unavailable for purchase.",
-                        code=OrderErrorCode.PRODUCT_UNAVAILABLE_FOR_PURCHASE,
-                    )
-                }
-            )
-
-
 def validate_draft_order(order, country):
     """Check if the given order contains the proper data.
 
@@ -103,4 +90,3 @@ def validate_draft_order(order, country):
     validate_total_quantity(order)
     validate_order_lines(order, country)
     validate_product_is_published(order)
-    validate_product_is_available_for_purchase(order)

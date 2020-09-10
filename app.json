@@ -12,7 +12,8 @@
   "image": "heroku/python",
   "env": {
     "DJANGO_SETTINGS_MODULE": "saleor.settings",
-    "DEBUG": "True",
+    "NODE_ENV": "production",
+    "DEBUG": "False",
     "NPM_CONFIG_PRODUCTION": "false",
     "ALLOWED_HOSTS": {
       "description": "Comma-separated list of hosts",
@@ -51,6 +52,9 @@
     "scheduler:standard"
   ],
   "buildpacks": [
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-nodejs.git"
+    },
     {
       "url": "https://github.com/heroku/heroku-buildpack-python.git"
     }

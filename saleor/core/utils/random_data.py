@@ -38,6 +38,7 @@ from ...discount.models import Sale, Voucher
 from ...discount.utils import fetch_discounts
 from ...giftcard.models import GiftCard
 from ...menu.models import Menu
+from ...menu.utils import update_menu
 from ...order.models import Fulfillment, Order, OrderLine
 from ...order.utils import update_order_status
 from ...page.models import Page
@@ -125,12 +126,6 @@ IMAGES_MAPPING = {
     116: ["saleordemoproduct_cl_bogo02_1.png"],
     117: ["saleordemoproduct_cl_bogo03_1.png"],
     118: ["saleordemoproduct_cl_bogo04_1.png", "saleordemoproduct_cl_bogo04_2.png"],
-    119: ["saleor-digital-03_1.png"],
-    120: ["saleor-digital-03_2.png"],
-    121: ["saleor-digital-03_3.png"],
-    122: ["saleor-digital-03_4.png"],
-    123: ["saleor-digital-03_5.png"],
-    124: ["saleor-digital-03_6.png"],
 }
 
 
@@ -215,10 +210,10 @@ def create_products(products_data, placeholder_dir, create_images):
             continue
 
         defaults = product["fields"]
+        set_field_as_money(defaults, "price")
         defaults["weight"] = get_weight(defaults["weight"])
         defaults["category_id"] = defaults.pop("category")
         defaults["product_type_id"] = defaults.pop("product_type")
-
         product, _ = Product.objects.update_or_create(pk=pk, defaults=defaults)
 
         if create_images:
@@ -249,8 +244,8 @@ def create_product_variants(variants_data):
         defaults["product_id"] = product_id
         set_field_as_money(defaults, "price_override")
         set_field_as_money(defaults, "cost_price")
+        quantity = defaults.pop("quantity")
         variant, _ = ProductVariant.objects.update_or_create(pk=pk, defaults=defaults)
-        quantity = random.randint(100, 500)
         create_stocks(variant, quantity=quantity)
 
 
@@ -1210,6 +1205,8 @@ def create_menus():
     )
 
     yield "Created footer menu"
+    update_menu(top_menu)
+    update_menu(bottom_menu)
     site = Site.objects.get_current()
     site_settings = site.settings
     site_settings.top_menu = top_menu

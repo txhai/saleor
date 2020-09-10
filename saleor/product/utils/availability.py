@@ -14,8 +14,9 @@ from ...plugins.manager import get_plugins_manager
 from ...warehouse.availability import (
     are_all_product_variants_in_stock,
     is_product_in_stock,
+    is_variant_in_stock,
 )
-from .. import ProductAvailabilityStatus
+from .. import ProductAvailabilityStatus, VariantAvailabilityStatus
 
 if TYPE_CHECKING:
     # flake8: noqa
@@ -25,8 +26,8 @@ if TYPE_CHECKING:
 @dataclass
 class ProductAvailability:
     on_sale: bool
-    price_range: Optional[TaxedMoneyRange]
-    price_range_undiscounted: Optional[TaxedMoneyRange]
+    price_range: TaxedMoneyRange
+    price_range_undiscounted: TaxedMoneyRange
     discount: Optional[TaxedMoney]
     price_range_local_currency: Optional[TaxedMoneyRange]
     discount_local_currency: Optional[TaxedMoneyRange]
@@ -64,6 +65,12 @@ def get_product_availability_status(
     if not is_visible and product.publication_date is not None:
         return ProductAvailabilityStatus.NOT_YET_AVAILABLE
     return ProductAvailabilityStatus.READY_FOR_PURCHASE
+
+
+def get_variant_availability_status(variant, country):
+    if not is_variant_in_stock(variant, country):
+        return VariantAvailabilityStatus.OUT_OF_STOCK
+    return VariantAvailabilityStatus.AVAILABLE
 
 
 def _get_total_discount_from_range(
@@ -107,6 +114,12 @@ def _get_product_price_range(
     return price_range_local, discount_local_currency
 
 
+def get_variant_base_price(*, variant: ProductVariant, product: Product):
+    return (
+        variant.price_override if variant.price_override is not None else product.price
+    )
+
+
 def get_variant_price(
     *,
     variant: ProductVariant,
@@ -116,7 +129,7 @@ def get_variant_price(
 ):
     return calculate_discounted_price(
         product=product,
-        price=variant.price,
+        price=get_variant_base_price(variant=variant, product=product),
         collections=collections,
         discounts=discounts,
     )
@@ -128,7 +141,7 @@ def get_product_price_range(
     variants: Iterable[ProductVariant],
     collections: Iterable[Collection],
     discounts: Iterable[DiscountInfo]
-) -> Optional[MoneyRange]:
+) -> MoneyRange:
     with opentracing.global_tracer().start_active_span("get_product_price_range"):
         if variants:
             prices = [
@@ -141,8 +154,13 @@ def get_product_price_range(
                 for variant in variants
             ]
             return MoneyRange(min(prices), max(prices))
-
-        return None
+        price = calculate_discounted_price(
+            product=product,
+            price=product.price,
+            collections=collections,
+            discounts=discounts,
+        )
+        return MoneyRange(start=price, stop=price)
 
 
 def get_product_availability(
@@ -158,49 +176,38 @@ def get_product_availability(
     with opentracing.global_tracer().start_active_span("get_product_availability"):
         if not plugins:
             plugins = get_plugins_manager()
-
-        discounted = None
         discounted_net_range = get_product_price_range(
             product=product,
             variants=variants,
             collections=collections,
             discounts=discounts,
         )
-        if discounted_net_range is not None:
-            discounted = TaxedMoneyRange(
-                start=plugins.apply_taxes_to_product(
-                    product, discounted_net_range.start, country
-                ),
-                stop=plugins.apply_taxes_to_product(
-                    product, discounted_net_range.stop, country
-                ),
-            )
-
-        undiscounted = None
         undiscounted_net_range = get_product_price_range(
             product=product, variants=variants, collections=collections, discounts=[]
         )
-        if undiscounted_net_range is not None:
-            undiscounted = TaxedMoneyRange(
-                start=plugins.apply_taxes_to_product(
-                    product, undiscounted_net_range.start, country
-                ),
-                stop=plugins.apply_taxes_to_product(
-                    product, undiscounted_net_range.stop, country
-                ),
-            )
+        discounted = TaxedMoneyRange(
+            start=plugins.apply_taxes_to_product(
+                product, discounted_net_range.start, country
+            ),
+            stop=plugins.apply_taxes_to_product(
+                product, discounted_net_range.stop, country
+            ),
+        )
+        undiscounted = TaxedMoneyRange(
+            start=plugins.apply_taxes_to_product(
+                product, undiscounted_net_range.start, country
+            ),
+            stop=plugins.apply_taxes_to_product(
+                product, undiscounted_net_range.stop, country
+            ),
+        )
 
-        discount = None
-        price_range_local = None
-        discount_local_currency = None
-        if undiscounted_net_range is not None and discounted_net_range is not None:
-            discount = _get_total_discount_from_range(undiscounted, discounted)
-            price_range_local, discount_local_currency = _get_product_price_range(
-                discounted, undiscounted, local_currency
-            )
+        discount = _get_total_discount_from_range(undiscounted, discounted)
+        price_range_local, discount_local_currency = _get_product_price_range(
+            discounted, undiscounted, local_currency
+        )
 
         is_on_sale = product.is_visible and discount is not None
-
         return ProductAvailability(
             on_sale=is_on_sale,
             price_range=discounted,

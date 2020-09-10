@@ -2,13 +2,11 @@ from dataclasses import asdict
 from typing import List, Union
 
 import graphene
-from django.conf import settings
 from graphene import relay
 from graphene_federation import key
 from graphql.error import GraphQLError
 
 from ....core.permissions import ProductPermissions
-from ....core.weight import convert_weight_to_default_weight_unit
 from ....product import models
 from ....product.templatetags.product_images import (
     get_product_image_thumbnail,
@@ -22,8 +20,10 @@ from ....product.utils.availability import (
 from ....product.utils.costs import get_margin_for_variant, get_product_costs_data
 from ....warehouse.availability import (
     get_available_quantity,
+    get_available_quantity_for_customer,
     get_quantity_allocated,
     is_product_in_stock,
+    is_variant_in_stock,
 )
 from ...account.enums import CountryCodeEnum
 from ...core.connection import CountableDjangoObjectType
@@ -41,11 +41,8 @@ from ...translations.types import (
     ProductTranslation,
     ProductVariantTranslation,
 )
-from ...utils import get_database_id, get_user_or_app_from_context
+from ...utils import get_database_id
 from ...utils.filters import reporting_period_to_date
-from ...warehouse.dataloaders import (
-    AvailableQuantityByProductVariantIdAndCountryCodeLoader,
-)
 from ...warehouse.types import Stock
 from ..dataloaders import (
     CategoryByIdLoader,
@@ -56,9 +53,8 @@ from ..dataloaders import (
     SelectedAttributesByProductIdLoader,
     SelectedAttributesByProductVariantIdLoader,
 )
-from ..filters import AttributeFilterInput, ProductFilterInput
+from ..filters import AttributeFilterInput
 from ..resolvers import resolve_attributes
-from ..sorters import ProductOrder
 from .attributes import Attribute, SelectedAttribute
 from .digital_contents import DigitalContent
 
@@ -196,15 +192,13 @@ class ProductVariant(CountableDjangoObjectType):
             "This field will be removed after 2020-07-31."
         ),
     )
-    price = graphene.Field(
+    price_override = graphene.Field(
         Money,
         description=(
-            "Base price of a product variant. "
-            "This field is restricted for admins. "
-            "Use the pricing field to get the public price for customers."
+            "Override the base price of a product if necessary. A value of `null` "
+            "indicates that the default product price is used."
         ),
     )
-
     pricing = graphene.Field(
         VariantPricingInfo,
         description=(
@@ -280,19 +274,14 @@ class ProductVariant(CountableDjangoObjectType):
     @permission_required(ProductPermissions.MANAGE_PRODUCTS)
     def resolve_stocks(root: models.ProductVariant, info, country_code=None):
         if not country_code:
-            return root.stocks.annotate_available_quantity()
-        return root.stocks.for_country(country_code).annotate_available_quantity()
+            return root.stocks.annotate_available_quantity().all()
+        return root.stocks.annotate_available_quantity().for_country(country_code).all()
 
     @staticmethod
     def resolve_quantity_available(
         root: models.ProductVariant, info, country_code=None
     ):
-        if not root.track_inventory:
-            return settings.MAX_CHECKOUT_LINE_QUANTITY
-
-        return AvailableQuantityByProductVariantIdAndCountryCodeLoader(
-            info.context
-        ).load((root.id, country_code))
+        return get_available_quantity_for_customer(root, country_code)
 
     @staticmethod
     @permission_required(ProductPermissions.MANAGE_PRODUCTS)
@@ -301,12 +290,7 @@ class ProductVariant(CountableDjangoObjectType):
 
     @staticmethod
     def resolve_stock_quantity(root: models.ProductVariant, info):
-        if not root.track_inventory:
-            return settings.MAX_CHECKOUT_LINE_QUANTITY
-
-        return AvailableQuantityByProductVariantIdAndCountryCodeLoader(
-            info.context
-        ).load((root.id, info.context.country))
+        return get_available_quantity_for_customer(root, info.context.country)
 
     @staticmethod
     def resolve_attributes(root: models.ProductVariant, info):
@@ -323,9 +307,8 @@ class ProductVariant(CountableDjangoObjectType):
         return root.cost_price
 
     @staticmethod
-    @permission_required(ProductPermissions.MANAGE_PRODUCTS)
     def resolve_price(root: models.ProductVariant, *_args):
-        return root.price
+        return root.base_price
 
     @staticmethod
     def resolve_pricing(root: models.ProductVariant, info):
@@ -363,17 +346,13 @@ class ProductVariant(CountableDjangoObjectType):
 
     @staticmethod
     def resolve_is_available(root: models.ProductVariant, info):
-        if not root.track_inventory:
-            return True
+        country = info.context.country
+        return is_variant_in_stock(root, country)
 
-        def is_variant_in_stock(available_quantity):
-            return available_quantity > 0
-
-        return (
-            AvailableQuantityByProductVariantIdAndCountryCodeLoader(info.context)
-            .load((root.id, info.context.country))
-            .then(is_variant_in_stock)
-        )
+    @staticmethod
+    @permission_required(ProductPermissions.MANAGE_PRODUCTS)
+    def resolve_price_override(root: models.ProductVariant, *_args):
+        return root.price_override
 
     @staticmethod
     @permission_required(ProductPermissions.MANAGE_PRODUCTS)
@@ -425,10 +404,6 @@ class ProductVariant(CountableDjangoObjectType):
     def __resolve_reference(root, _info, **_kwargs):
         return graphene.Node.get_node_from_global_id(_info, root.id)
 
-    @staticmethod
-    def resolve_weight(root: models.ProductVariant, _info, **_kwargs):
-        return convert_weight_to_default_weight_unit(root.weight)
-
 
 @key(fields="id")
 class Product(CountableDjangoObjectType):
@@ -452,6 +427,7 @@ class Product(CountableDjangoObjectType):
     is_available = graphene.Boolean(
         description="Whether the product is in stock and visible or not."
     )
+    base_price = graphene.Field(Money, description="The product's default base price.")
     minimal_variant_price = graphene.Field(
         Money, description="The price of the cheapest variant (including discounts)."
     )
@@ -480,16 +456,12 @@ class Product(CountableDjangoObjectType):
         lambda: Collection, description="List of collections for the product."
     )
     translation = TranslationField(ProductTranslation, type_name="product")
-    is_available_for_purchase = graphene.Boolean(
-        description="Whether the product is available for purchase."
-    )
 
     class Meta:
         description = "Represents an individual item for sale in the storefront."
         interfaces = [relay.Node, ObjectWithMetadata]
         model = models.Product
         only_fields = [
-            "available_for_purchase",
             "category",
             "charge_taxes",
             "description",
@@ -504,7 +476,6 @@ class Product(CountableDjangoObjectType):
             "seo_title",
             "updated_at",
             "weight",
-            "visible_in_listings",
         ]
 
     @staticmethod
@@ -577,6 +548,28 @@ class Product(CountableDjangoObjectType):
         return root.is_visible and in_stock
 
     @staticmethod
+    @permission_required(ProductPermissions.MANAGE_PRODUCTS)
+    def resolve_base_price(root: models.Product, _info):
+        return root.price
+
+    @staticmethod
+    def resolve_price(root: models.Product, info):
+        context = info.context
+
+        def calculate_price(discounts):
+            price_range = root.get_price_range(discounts)
+            price = info.context.plugins.apply_taxes_to_product(
+                root, price_range.start, info.context.country
+            )
+            return price.net
+
+        return (
+            DiscountsByDateTimeLoader(context)
+            .load(info.context.request_time)
+            .then(calculate_price)
+        )
+
+    @staticmethod
     def resolve_attributes(root: models.Product, info):
         return SelectedAttributesByProductIdLoader(info.context).load(root.id)
 
@@ -631,14 +624,6 @@ class Product(CountableDjangoObjectType):
     @staticmethod
     def __resolve_reference(root, _info, **_kwargs):
         return graphene.Node.get_node_from_global_id(_info, root.id)
-
-    @staticmethod
-    def resolve_weight(root: models.Product, _info, **_kwargs):
-        return convert_weight_to_default_weight_unit(root.weight)
-
-    @staticmethod
-    def resolve_is_available_for_purchase(root: models.Product, _info):
-        return root.is_available_for_purchase()
 
 
 @key(fields="id")
@@ -721,18 +706,11 @@ class ProductType(CountableDjangoObjectType):
     def __resolve_reference(root, _info, **_kwargs):
         return graphene.Node.get_node_from_global_id(_info, root.id)
 
-    @staticmethod
-    def resolve_weight(root: models.ProductType, _info, **_kwargs):
-        return convert_weight_to_default_weight_unit(root.weight)
-
 
 @key(fields="id")
 class Collection(CountableDjangoObjectType):
     products = PrefetchingConnectionField(
-        Product,
-        filter=ProductFilterInput(description="Filtering options for products."),
-        sort_by=ProductOrder(description="Sort products."),
-        description="List of products in this collection.",
+        Product, description="List of products in this collection."
     )
     background_image = graphene.Field(
         Image, size=graphene.Int(description="Size of the image.")
@@ -857,11 +835,8 @@ class Category(CountableDjangoObjectType):
 
     @staticmethod
     def resolve_products(root: models.Category, info, **_kwargs):
-        requestor = get_user_or_app_from_context(info.context)
         tree = root.get_descendants(include_self=True)
         qs = models.Product.objects.published()
-        if not qs.user_has_access_to_all(requestor):
-            qs = qs.exclude(visible_in_listings=False)
         return qs.filter(category__in=tree)
 
     @staticmethod

@@ -2,7 +2,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, List, Optional, Set, Union
 
 import graphene
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import Group, Permission
 from django.contrib.postgres.aggregates import ArrayAgg
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Value
@@ -11,7 +11,7 @@ from graphene.utils.str_converters import to_camel_case
 
 from ...account import events as account_events
 from ...account.error_codes import AccountErrorCode
-from ...core.permissions import AccountPermissions
+from ...core.permissions import AccountPermissions, get_permissions
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
@@ -171,7 +171,13 @@ def get_allowed_fields_camel_case(allowed_fields: set) -> set:
 
 def get_user_permissions(user: "User") -> "QuerySet":
     """Return all user permissions - from user groups and user_permissions field."""
-    return user.effective_permissions
+    if user.is_superuser:
+        return get_permissions()
+    groups = user.groups.all()
+    user_permissions = user.user_permissions.all()
+    group_permissions = Permission.objects.filter(group__in=groups)
+    permissions = user_permissions | group_permissions
+    return permissions
 
 
 def get_out_of_scope_permissions(
@@ -448,17 +454,3 @@ def look_for_permission_in_users_with_manage_staff(
             common_permissions = permissions_to_find & permissions
             # remove found permission from set
             permissions_to_find.difference_update(common_permissions)
-
-
-def requestor_has_access(
-    requestor: Union["User", "App"], owner: Optional["User"], perm
-):
-    """Check if requestor can access data.
-
-    Args:
-        requestor: requestor user or app
-        owner: data owner
-        perm: permission which give the access to the data
-
-    """
-    return requestor == owner or requestor.has_perm(perm)

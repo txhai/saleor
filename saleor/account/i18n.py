@@ -3,12 +3,12 @@ from collections import defaultdict
 import i18naddress
 from django import forms
 from django.core.exceptions import ValidationError
-from django.forms import BoundField  # type: ignore
+from django.forms.forms import BoundField  # type: ignore
 from django_countries import countries
 
 from .models import Address
 from .validators import validate_possible_number
-from .widgets import DatalistTextWidget
+from .widgets import DatalistTextWidget, PhonePrefixWidget
 
 COUNTRY_FORMS = {}
 UNKNOWN_COUNTRIES = set()
@@ -107,7 +107,7 @@ class AddressForm(forms.ModelForm):
             "street_address_2": "Apartment, suite, unit, building, floor, etc",
         }
 
-    phone = PossiblePhoneNumberFormField(required=False)
+    phone = PossiblePhoneNumberFormField(widget=PhonePrefixWidget, required=False)
 
     def __init__(self, *args, **kwargs):
         autocomplete_type = kwargs.pop("autocomplete_type", None)

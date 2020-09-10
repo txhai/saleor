@@ -288,9 +288,8 @@ class VatlayerPlugin(BasePlugin):
         """Validate if provided configuration is correct."""
         configuration = plugin_configuration.configuration
         configuration = {item["name"]: item["value"] for item in configuration}
-
-        access_key = configuration.get("Access key")
-        if plugin_configuration.active and not access_key:
+        access_key = configuration["Access key"]
+        if not access_key and plugin_configuration.active:
             raise ValidationError(
                 {
                     "Access key": ValidationError(

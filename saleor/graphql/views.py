@@ -1,4 +1,3 @@
-import fnmatch
 import json
 import logging
 import traceback
@@ -23,9 +22,9 @@ from graphql.error import (
     format_error as format_graphql_error,
 )
 from graphql.execution import ExecutionResult
-from jwt.exceptions import PyJWTError
+from graphql_jwt.exceptions import JSONWebTokenError
 
-from ..core.exceptions import PermissionDenied, ReadOnlyException
+from ..core.exceptions import ReadOnlyException
 from ..core.utils import is_valid_ipv4, is_valid_ipv6
 
 API_PATH = SimpleLazyObject(lambda: reverse("api"))
@@ -60,7 +59,7 @@ class GraphQLView(View):
     middleware = None
     root_value = None
 
-    HANDLED_EXCEPTIONS = (GraphQLError, PyJWTError, ReadOnlyException, PermissionDenied)
+    HANDLED_EXCEPTIONS = (GraphQLError, JSONWebTokenError, ReadOnlyException)
 
     def __init__(
         self, schema=None, executor=None, middleware=None, root_value=None, backend=None
@@ -92,18 +91,11 @@ class GraphQLView(View):
         else:
             return HttpResponseNotAllowed(["GET", "OPTIONS", "POST"])
         # Add access control headers
-        if "HTTP_ORIGIN" in request.META:
-            for origin in settings.ALLOWED_GRAPHQL_ORIGINS:
-                if fnmatch.fnmatchcase(request.META["HTTP_ORIGIN"], origin):
-                    response["Access-Control-Allow-Origin"] = request.META[
-                        "HTTP_ORIGIN"
-                    ]
-                    response["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-                    response[
-                        "Access-Control-Allow-Headers"
-                    ] = "Origin, Content-Type, Accept, Authorization"
-                    response["Access-Control-Allow-Credentials"] = "true"
-                    break
+        response["Access-Control-Allow-Origin"] = settings.ALLOWED_GRAPHQL_ORIGINS
+        response["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response[
+            "Access-Control-Allow-Headers"
+        ] = "Origin, Content-Type, Accept, Authorization"
         return response
 
     def render_playground(self, request):

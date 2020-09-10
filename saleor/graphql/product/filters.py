@@ -22,19 +22,17 @@ from ..core.filters import EnumFilter, ListObjectTypeFilter, ObjectTypeFilter
 from ..core.types import FilterInputObjectType
 from ..core.types.common import IntRangeInput, PriceRangeInput
 from ..core.utils import from_global_id_strict_type
-from ..utils import (
-    get_nodes,
-    get_user_or_app_from_context,
-    resolve_global_ids_to_primary_keys,
-)
+from ..utils import get_nodes, resolve_global_ids_to_primary_keys
 from ..utils.filters import filter_by_query_param, filter_range_field
 from ..warehouse import types as warehouse_types
+from . import types
 from .enums import (
     CollectionPublished,
     ProductTypeConfigurable,
     ProductTypeEnum,
     StockAvailability,
 )
+from .types.attributes import AttributeInput
 
 
 def filter_fields_containing_value(*search_fields: str):
@@ -81,11 +79,11 @@ def filter_products_by_attributes(qs, filter_value):
     return filter_products_by_attributes_values(qs, queries)
 
 
-def filter_products_by_variant_price(qs, price_lte=None, price_gte=None):
+def filter_products_by_price(qs, price_lte=None, price_gte=None):
     if price_lte:
-        qs = qs.filter(variants__price_amount__lte=price_lte)
+        qs = qs.filter(price_amount__lte=price_lte)
     if price_gte:
-        qs = qs.filter(variants__price_amount__gte=price_gte)
+        qs = qs.filter(price_amount__gte=price_gte)
     return qs
 
 
@@ -143,7 +141,7 @@ def filter_attributes(qs, _, value):
 
 def filter_categories(qs, _, value):
     if value:
-        categories = get_nodes(value, "Category", Category)
+        categories = get_nodes(value, types.Category)
         qs = filter_products_by_categories(qs, categories)
     return qs
 
@@ -152,15 +150,21 @@ def filter_has_category(qs, _, value):
     return qs.filter(category__isnull=not value)
 
 
+def filter_category_by_level(qs, _, value):
+    if value:
+        return qs.filter(level=value)
+    return qs
+
+
 def filter_collections(qs, _, value):
     if value:
-        collections = get_nodes(value, "Collection", Collection)
+        collections = get_nodes(value, types.Collection)
         qs = filter_products_by_collections(qs, collections)
     return qs
 
 
-def filter_variant_price(qs, _, value):
-    qs = filter_products_by_variant_price(
+def filter_price(qs, _, value):
+    qs = filter_products_by_price(
         qs, price_lte=value.get("lte"), price_gte=value.get("gte")
     )
     return qs
@@ -182,7 +186,7 @@ def filter_stock_availability(qs, _, value):
 def filter_search(qs, _, value):
     if value:
         search = picker.pick_backend()
-        qs = qs.distinct() & search(value).distinct()
+        qs &= search(value).distinct()
     return qs
 
 
@@ -210,7 +214,7 @@ def filter_product_type(qs, _, value):
     return qs
 
 
-def filter_attributes_by_product_types(qs, field, value, requestor):
+def filter_attributes_by_product_types(qs, field, value):
     if not value:
         return qs
 
@@ -225,9 +229,6 @@ def filter_attributes_by_product_types(qs, field, value, requestor):
 
         tree = category.get_descendants(include_self=True)
         product_qs = Product.objects.filter(category__in=tree)
-
-        if not product_qs.user_has_access_to_all(requestor):
-            product_qs = product_qs.exclude(visible_in_listings=False)
 
     elif field == "in_collection":
         collection_id = from_global_id_strict_type(
@@ -303,15 +304,16 @@ class ProductFilter(django_filters.FilterSet):
     collections = GlobalIDMultipleChoiceFilter(method=filter_collections)
     categories = GlobalIDMultipleChoiceFilter(method=filter_categories)
     has_category = django_filters.BooleanFilter(method=filter_has_category)
-    price = ObjectTypeFilter(input_class=PriceRangeInput, method=filter_variant_price)
+    price = ObjectTypeFilter(
+        input_class=PriceRangeInput, method=filter_price, field_name="price_amount"
+    )
     minimal_price = ObjectTypeFilter(
         input_class=PriceRangeInput,
         method=filter_minimal_price,
         field_name="minimal_price_amount",
     )
     attributes = ListObjectTypeFilter(
-        input_class="saleor.graphql.product.types.attributes.AttributeInput",
-        method=filter_attributes,
+        input_class=AttributeInput, method=filter_attributes
     )
     stock_availability = EnumFilter(
         input_class=StockAvailability, method=filter_stock_availability
@@ -328,6 +330,7 @@ class ProductFilter(django_filters.FilterSet):
             "collections",
             "categories",
             "has_category",
+            "price",
             "attributes",
             "stock_availability",
             "product_type",
@@ -356,9 +359,13 @@ class CategoryFilter(django_filters.FilterSet):
     )
     ids = GlobalIDMultipleChoiceFilter(field_name="id")
 
+    level = django_filters.NumberFilter(
+        method=filter_category_by_level
+    )
+
     class Meta:
         model = Category
-        fields = ["search"]
+        fields = ["search", "level"]
 
 
 class ProductTypeFilter(django_filters.FilterSet):
@@ -385,8 +392,8 @@ class AttributeFilter(django_filters.FilterSet):
     )
     ids = GlobalIDMultipleChoiceFilter(field_name="id")
 
-    in_collection = GlobalIDFilter(method="filter_in_collection")
-    in_category = GlobalIDFilter(method="filter_in_category")
+    in_collection = GlobalIDFilter(method=filter_attributes_by_product_types)
+    in_category = GlobalIDFilter(method=filter_attributes_by_product_types)
 
     class Meta:
         model = Attribute
@@ -398,14 +405,6 @@ class AttributeFilter(django_filters.FilterSet):
             "filterable_in_dashboard",
             "available_in_grid",
         ]
-
-    def filter_in_collection(self, queryset, name, value):
-        requestor = get_user_or_app_from_context(self.request)
-        return filter_attributes_by_product_types(queryset, name, value, requestor)
-
-    def filter_in_category(self, queryset, name, value):
-        requestor = get_user_or_app_from_context(self.request)
-        return filter_attributes_by_product_types(queryset, name, value, requestor)
 
 
 class ProductFilterInput(FilterInputObjectType):

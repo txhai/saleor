@@ -1,30 +1,19 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List
 
 if TYPE_CHECKING:
     # flake8: noqa
-    from ..checkout.models import Checkout, CheckoutLine
-    from ..discount import DiscountInfo
-    from ..payment.interface import (
+    from saleor.payment.interface import (
         PaymentData,
         GatewayResponse,
         TokenConfig,
         CustomerSource,
-        PaymentGateway,
     )
 
 
 class PaymentInterface(ABC):
     @abstractmethod
-    def list_payment_gateways(
-        self, currency: Optional[str] = None, active_only: bool = True
-    ) -> List["PaymentGateway"]:
-        pass
-
-    @abstractmethod
-    def checkout_available_payment_gateways(
-        self, checkout: "Checkout",
-    ) -> List["PaymentGateway"]:
+    def list_payment_gateways(self, active_only: bool) -> List[dict]:
         pass
 
     @abstractmethod
@@ -55,10 +44,6 @@ class PaymentInterface(ABC):
     def confirm_payment(
         self, gateway: str, payment_information: "PaymentData"
     ) -> "GatewayResponse":
-        pass
-
-    @abstractmethod
-    def token_is_required_as_payment_input(self, gateway) -> bool:
         pass
 
     @abstractmethod

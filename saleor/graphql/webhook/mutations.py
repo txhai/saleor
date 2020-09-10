@@ -1,23 +1,20 @@
 import graphene
 from django.core.exceptions import ValidationError
 
-from ...core.permissions import AppPermission
+from ...core.permissions import WebhookPermissions
 from ...webhook import models
 from ...webhook.error_codes import WebhookErrorCode
 from ..core.mutations import ModelDeleteMutation, ModelMutation
 from ..core.types.common import WebhookError
 from .enums import WebhookEventTypeEnum
+from .types import Webhook
 
 
 class WebhookCreateInput(graphene.InputObjectType):
     name = graphene.String(description="The name of the webhook.", required=False)
     target_url = graphene.String(description="The url to receive the payload.")
     events = graphene.List(
-        WebhookEventTypeEnum,
-        description=(
-            "The events that webhook wants to subscribe. The CHECKOUT_QUANTITY_CHANGED"
-            " is depreacted. It will be removed in Saleor 3.0"
-        ),
+        WebhookEventTypeEnum, description="The events that webhook wants to subscribe."
     )
     service_account = graphene.ID(
         required=False,
@@ -45,7 +42,7 @@ class WebhookCreate(ModelMutation):
     class Meta:
         description = "Creates a new webhook subscription."
         model = models.Webhook
-        permissions = (AppPermission.MANAGE_APPS,)
+        permissions = (WebhookPermissions.MANAGE_WEBHOOKS,)
         error_type_class = WebhookError
         error_type_field = "webhook_errors"
 
@@ -107,10 +104,7 @@ class WebhookUpdateInput(graphene.InputObjectType):
     )
     events = graphene.List(
         WebhookEventTypeEnum,
-        description=(
-            "The events that webhook wants to subscribe. The CHECKOUT_QUANTITY_CHANGED"
-            " is depreacted. It will be removed in Saleor 3.0"
-        ),
+        description="The events that webhook wants to subscribe.",
         required=False,
     )
     service_account = graphene.ID(
@@ -130,6 +124,8 @@ class WebhookUpdateInput(graphene.InputObjectType):
 
 
 class WebhookUpdate(ModelMutation):
+    webhook = graphene.Field(Webhook)
+
     class Arguments:
         id = graphene.ID(required=True, description="ID of a webhook to update.")
         input = WebhookUpdateInput(
@@ -139,7 +135,7 @@ class WebhookUpdate(ModelMutation):
     class Meta:
         description = "Updates a webhook subscription."
         model = models.Webhook
-        permissions = (AppPermission.MANAGE_APPS,)
+        permissions = (WebhookPermissions.MANAGE_WEBHOOKS,)
         error_type_class = WebhookError
         error_type_field = "webhook_errors"
 
@@ -168,13 +164,15 @@ class WebhookUpdate(ModelMutation):
 
 
 class WebhookDelete(ModelDeleteMutation):
+    webhook = graphene.Field(Webhook)
+
     class Arguments:
         id = graphene.ID(required=True, description="ID of a webhook to delete.")
 
     class Meta:
         description = "Deletes a webhook subscription."
         model = models.Webhook
-        permissions = (AppPermission.MANAGE_APPS,)
+        permissions = (WebhookPermissions.MANAGE_WEBHOOKS,)
         error_type_class = WebhookError
         error_type_field = "webhook_errors"
 

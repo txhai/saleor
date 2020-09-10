@@ -1,6 +1,13 @@
 import graphene
 
+from .mutations import CreateToken, RefreshToken, VerifyToken
 from .types.common import TaxType
+
+
+class CoreMutations(graphene.ObjectType):
+    token_create = CreateToken.Field()
+    token_refresh = RefreshToken.Field()
+    token_verify = VerifyToken.Field()
 
 
 class CoreQueries(graphene.ObjectType):

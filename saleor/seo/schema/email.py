@@ -59,7 +59,8 @@ def get_order_confirmation_markup(order: "Order") -> str:
         "orderDate": order.created,
     }
 
-    for line in order.lines.all():
+    lines = order.lines.prefetch_related("variant")
+    for line in lines:
         product_data = get_product_data(line=line, organization=organization)
         data["acceptedOffer"].append(product_data)
     return json.dumps(data, cls=HTMLSafeJSON)

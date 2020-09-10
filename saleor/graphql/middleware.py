@@ -3,10 +3,10 @@ from typing import Optional
 import opentracing
 import opentracing.tags
 from django.conf import settings
-from django.contrib.auth import authenticate
 from django.contrib.auth.models import AnonymousUser
 from django.utils.functional import SimpleLazyObject
 from graphql import ResolveInfo
+from graphql_jwt.middleware import JSONWebTokenMiddleware
 
 from ..app.models import App
 from ..core.exceptions import ReadOnlyException
@@ -14,21 +14,13 @@ from ..core.tracing import should_trace
 from .views import API_PATH, GraphQLView
 
 
-def get_user(request):
-    if not hasattr(request, "_cached_user"):
-        request._cached_user = authenticate(request=request)
-    return request._cached_user
-
-
-class JWTMiddleware:
+class JWTMiddleware(JSONWebTokenMiddleware):
     def resolve(self, next, root, info, **kwargs):
         request = info.context
 
-        def user():
-            return get_user(request) or AnonymousUser()
-
-        request.user = SimpleLazyObject(lambda: user())
-        return next(root, info, **kwargs)
+        if not hasattr(request, "user"):
+            request.user = AnonymousUser()
+        return super().resolve(next, root, info, **kwargs)
 
 
 class OpentracingGrapheneMiddleware:

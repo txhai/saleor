@@ -163,7 +163,7 @@ class VoucherCustomer(models.Model):
     customer_email = models.EmailField()
 
     class Meta:
-        ordering = ("voucher", "customer_email", "pk")
+        ordering = ("voucher", "customer_email")
         unique_together = (("voucher", "customer_email"),)
 
 
@@ -189,7 +189,7 @@ class VoucherTranslation(models.Model):
     )
 
     class Meta:
-        ordering = ("language_code", "voucher", "pk")
+        ordering = ("language_code", "voucher")
         unique_together = (("language_code", "voucher"),)
 
 

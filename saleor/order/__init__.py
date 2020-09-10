@@ -46,17 +46,10 @@ class OrderEvents:
 
     EMAIL_SENT = "email_sent"
 
-    PAYMENT_AUTHORIZED = "payment_authorized"
     PAYMENT_CAPTURED = "payment_captured"
     PAYMENT_REFUNDED = "payment_refunded"
     PAYMENT_VOIDED = "payment_voided"
     PAYMENT_FAILED = "payment_failed"
-    EXTERNAL_SERVICE_NOTIFICATION = "external_service_notification"
-
-    INVOICE_REQUESTED = "invoice_requested"
-    INVOICE_GENERATED = "invoice_generated"
-    INVOICE_UPDATED = "invoice_updated"
-    INVOICE_SENT = "invoice_sent"
 
     FULFILLMENT_CANCELED = "fulfillment_canceled"
     FULFILLMENT_RESTOCKED_ITEMS = "fulfillment_restocked_items"
@@ -79,16 +72,10 @@ class OrderEvents:
         (ORDER_FULLY_PAID, "The order was fully paid"),
         (UPDATED_ADDRESS, "The address from the placed order was updated"),
         (EMAIL_SENT, "The email was sent"),
-        (PAYMENT_AUTHORIZED, "The payment was authorized"),
         (PAYMENT_CAPTURED, "The payment was captured"),
-        (EXTERNAL_SERVICE_NOTIFICATION, "Notification from external service"),
         (PAYMENT_REFUNDED, "The payment was refunded"),
         (PAYMENT_VOIDED, "The payment was voided"),
         (PAYMENT_FAILED, "The payment was failed"),
-        (INVOICE_REQUESTED, "An invoice was requested"),
-        (INVOICE_GENERATED, "An invoice was generated"),
-        (INVOICE_UPDATED, "An invoice was updated"),
-        (INVOICE_SENT, "An invoice was sent"),
         (FULFILLMENT_CANCELED, "A fulfillment was canceled"),
         (FULFILLMENT_RESTOCKED_ITEMS, "The items of the fulfillment were restocked"),
         (FULFILLMENT_FULFILLED_ITEMS, "Some items were fulfilled"),
@@ -104,9 +91,7 @@ class OrderEventsEmails:
     PAYMENT = "payment_confirmation"
     SHIPPING = "shipping_confirmation"
     TRACKING_UPDATED = "tracking_updated"
-    ORDER_CONFIRMATION = "order_confirmation"
-    ORDER_CANCEL = "order_cancel"
-    ORDER_REFUND = "order_refund"
+    ORDER = "order_confirmation"
     FULFILLMENT = "fulfillment_confirmation"
     DIGITAL_LINKS = "digital_links"
 
@@ -114,9 +99,7 @@ class OrderEventsEmails:
         (PAYMENT, "The payment confirmation email was sent"),
         (SHIPPING, "The shipping confirmation email was sent"),
         (TRACKING_UPDATED, "The fulfillment tracking code email was sent"),
-        (ORDER_CONFIRMATION, "The order placement confirmation email was sent"),
-        (ORDER_CANCEL, "The order cancel confirmation email was sent"),
-        (ORDER_REFUND, "The order refund confirmation email was sent"),
+        (ORDER, "The order placement confirmation email was sent"),
         (FULFILLMENT, "The fulfillment confirmation email was sent"),
         (DIGITAL_LINKS, "The email containing the digital links was sent"),
     ]

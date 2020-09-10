@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Union
 
 from django.conf import settings
+from django.contrib.postgres.fields import JSONField
 from django.db import models
 from django.db.models import Q
 from django_countries.fields import CountryField
@@ -10,6 +11,7 @@ from measurement.measures import Weight
 from prices import Money, MoneyRange
 
 from ..core.permissions import ShippingPermissions
+from ..core.utils.json_serializer import CustomJsonEncoder
 from ..core.utils.translations import TranslationProxy
 from ..core.weight import (
     WeightUnits,
@@ -52,11 +54,15 @@ def _get_weight_type_display(min_weight, max_weight):
         max_weight = convert_weight(max_weight, default_unit)
 
     if max_weight is None:
-        return ("%(min_weight)s and up" % {"min_weight": min_weight},)
-    return "%(min_weight)s to %(max_weight)s" % {
+        return (
+            "Applies to orders heavier than the threshold",
+            "%(min_weight)s and up" % {"min_weight": min_weight},
+        )
+    return ("Applies to orders of total weight within this range",)
+    "%(min_weight)s to %(max_weight)s" % {
         "min_weight": min_weight,
         "max_weight": max_weight,
-    }
+    },
 
 
 class ShippingZone(models.Model):
@@ -96,9 +102,17 @@ class ShippingMethodQueryset(models.QuerySet):
         It is based on the given country code, and by shipping methods that are
         applicable to the given price & weight total.
         """
+        # If dedicated shipping zone for the country exists, we should use it
+        # in the first place
         qs = self.filter(
-            shipping_zone__countries__contains=country_code, currency=price.currency,
+            shipping_zone__countries__contains=country_code,
+            shipping_zone__default=False,
+            currency=price.currency,
         )
+        if not qs.exists():
+            # Otherwise default shipping zone should be used
+            qs = self.filter(shipping_zone__default=True, currency=price.currency)
+
         qs = qs.prefetch_related("shipping_zone").order_by("price_amount")
         price_based_methods = _applicable_price_based_methods(price, qs)
         weight_based_methods = _applicable_weight_based_methods(weight, qs)
@@ -167,6 +181,8 @@ class ShippingMethod(models.Model):
     maximum_order_weight = MeasurementField(
         measurement=Weight, unit_choices=WeightUnits.CHOICES, blank=True, null=True
     )
+
+    meta = JSONField(blank=True, default=dict, encoder=CustomJsonEncoder)
 
     objects = ShippingMethodQueryset.as_manager()
     translated = TranslationProxy()

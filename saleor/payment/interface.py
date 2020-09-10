@@ -1,21 +1,17 @@
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Union
-
-JSONValue = Union[str, int, float, bool, None, Dict[str, Any], List[Any]]
-JSONType = Union[Dict[str, JSONValue], List[JSONValue]]
+from typing import Any, Dict, Optional
 
 
 @dataclass
-class PaymentMethodInfo:
-    """Uniform way to represent payment method information."""
+class CreditCardInfo:
+    """Uniform way to represent Credit Card information."""
 
-    last_4: Optional[str] = None
-    exp_year: Optional[int] = None
-    exp_month: Optional[int] = None
+    last_4: str
+    exp_year: int
+    exp_month: int
     brand: Optional[str] = None
-    name: Optional[str] = None
-    type: Optional[str] = None
+    name_on_card: Optional[str] = None
 
 
 @dataclass
@@ -34,12 +30,8 @@ class GatewayResponse:
     transaction_id: Optional[str]
     error: Optional[str]
     customer_id: Optional[str] = None
-    payment_method_info: Optional[PaymentMethodInfo] = None
+    card_info: Optional[CreditCardInfo] = None
     raw_response: Optional[Dict[str, str]] = None
-    action_required_data: Optional[JSONType] = None
-    # Some gateway can process transaction asynchronously. This value define if we
-    # should create new transaction based on this response
-    transaction_already_processed: bool = False
 
 
 @dataclass
@@ -69,15 +61,12 @@ class PaymentData:
     currency: str
     billing: Optional[AddressData]
     shipping: Optional[AddressData]
-    payment_id: int
-    graphql_payment_id: str
     order_id: Optional[int]
     customer_ip_address: Optional[str]
     customer_email: str
     token: Optional[str] = None
     customer_id: Optional[str] = None
     reuse_source: bool = False
-    data: Optional[dict] = None
 
 
 @dataclass
@@ -97,7 +86,6 @@ class GatewayConfig:
 
     gateway_name: str
     auto_capture: bool
-    supported_currencies: str
     # Each gateway has different connection data so we are not able to create
     # a unified structure
     connection_params: Dict[str, Any]
@@ -111,14 +99,4 @@ class CustomerSource:
 
     id: str
     gateway: str
-    credit_card_info: Optional[PaymentMethodInfo] = None
-
-
-@dataclass
-class PaymentGateway:
-    """Dataclass for storing information about a payment gateway."""
-
-    id: str
-    name: str
-    currencies: List[str]
-    config: List[Dict[str, Any]]
+    credit_card_info: Optional[CreditCardInfo] = None

@@ -1,35 +1,31 @@
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Union
 
 import opentracing
 from django.conf import settings
-from django.core.handlers.wsgi import WSGIRequest
-from django.http import HttpResponse, HttpResponseNotFound
 from django.utils.module_loading import import_string
 from django_countries.fields import Country
 from prices import Money, MoneyRange, TaxedMoney, TaxedMoneyRange
 
 from ..checkout import base_calculations
 from ..core.payments import PaymentInterface
-from ..core.prices import quantize_price
-from ..core.taxes import TaxType, zero_taxed_money
+from ..core.taxes import TaxType, quantize_price, zero_taxed_money
 from ..discount import DiscountInfo
 from .models import PluginConfiguration
 
 if TYPE_CHECKING:
     # flake8: noqa
-    from .base_plugin import BasePlugin
+    from django.db.models.query import QuerySet
+    from .base_plugin import BasePlugin, PluginConfigurationType
     from ..checkout.models import Checkout, CheckoutLine
     from ..product.models import Product, ProductType
     from ..account.models import Address, User
     from ..order.models import Fulfillment, OrderLine, Order
-    from ..invoice.models import Invoice
     from ..payment.interface import (
         PaymentData,
         TokenConfig,
         GatewayResponse,
         CustomerSource,
-        PaymentGateway,
     )
 
 
@@ -97,6 +93,9 @@ class PluginsManager(PaymentInterface):
             "change_user_address", default_value, address, address_type, user
         )
 
+    def checkout_quantity_changed(self, checkout: "Checkout") -> None:
+        self.__run_method_on_plugins("checkout_quantity_changed", None, checkout)
+
     def calculate_checkout_total(
         self,
         checkout: "Checkout",
@@ -110,11 +109,8 @@ class PluginsManager(PaymentInterface):
             discount=checkout.discount,
             currency=checkout.currency,
         )
-        return quantize_price(
-            self.__run_method_on_plugins(
-                "calculate_checkout_total", default_value, checkout, lines, discounts
-            ),
-            checkout.currency,
+        return self.__run_method_on_plugins(
+            "calculate_checkout_total", default_value, checkout, lines, discounts
         )
 
     def calculate_checkout_subtotal(
@@ -129,11 +125,8 @@ class PluginsManager(PaymentInterface):
         default_value = base_calculations.base_checkout_subtotal(
             line_totals, checkout.currency
         )
-        return quantize_price(
-            self.__run_method_on_plugins(
-                "calculate_checkout_subtotal", default_value, checkout, lines, discounts
-            ),
-            checkout.currency,
+        return self.__run_method_on_plugins(
+            "calculate_checkout_subtotal", default_value, checkout, lines, discounts
         )
 
     def calculate_checkout_shipping(
@@ -143,11 +136,8 @@ class PluginsManager(PaymentInterface):
         discounts: Iterable[DiscountInfo],
     ) -> TaxedMoney:
         default_value = base_calculations.base_checkout_shipping_price(checkout, lines)
-        return quantize_price(
-            self.__run_method_on_plugins(
-                "calculate_checkout_shipping", default_value, checkout, lines, discounts
-            ),
-            checkout.currency,
+        return self.__run_method_on_plugins(
+            "calculate_checkout_shipping", default_value, checkout, lines, discounts
         )
 
     def calculate_order_shipping(self, order: "Order") -> TaxedMoney:
@@ -158,11 +148,8 @@ class PluginsManager(PaymentInterface):
             TaxedMoney(net=shipping_price, gross=shipping_price),
             shipping_price.currency,
         )
-        return quantize_price(
-            self.__run_method_on_plugins(
-                "calculate_order_shipping", default_value, order
-            ),
-            order.currency,
+        return self.__run_method_on_plugins(
+            "calculate_order_shipping", default_value, order
         )
 
     def calculate_checkout_line_total(
@@ -171,21 +158,15 @@ class PluginsManager(PaymentInterface):
         default_value = base_calculations.base_checkout_line_total(
             checkout_line, discounts
         )
-        return quantize_price(
-            self.__run_method_on_plugins(
-                "calculate_checkout_line_total", default_value, checkout_line, discounts
-            ),
-            checkout_line.checkout.currency,
+        return self.__run_method_on_plugins(
+            "calculate_checkout_line_total", default_value, checkout_line, discounts
         )
 
     def calculate_order_line_unit(self, order_line: "OrderLine") -> TaxedMoney:
         unit_price = order_line.unit_price
         default_value = quantize_price(unit_price, unit_price.currency)
-        return quantize_price(
-            self.__run_method_on_plugins(
-                "calculate_order_line_unit", default_value, order_line
-            ),
-            order_line.currency,
+        return self.__run_method_on_plugins(
+            "calculate_order_line_unit", default_value, order_line
         )
 
     def get_tax_rate_type_choices(self) -> List[TaxType]:
@@ -202,11 +183,8 @@ class PluginsManager(PaymentInterface):
         default_value = quantize_price(
             TaxedMoney(net=price, gross=price), price.currency
         )
-        return quantize_price(
-            self.__run_method_on_plugins(
-                "apply_taxes_to_product", default_value, product, price, country
-            ),
-            price.currency,
+        return self.__run_method_on_plugins(
+            "apply_taxes_to_product", default_value, product, price, country
         )
 
     def apply_taxes_to_shipping(
@@ -215,11 +193,8 @@ class PluginsManager(PaymentInterface):
         default_value = quantize_price(
             TaxedMoney(net=price, gross=price), price.currency
         )
-        return quantize_price(
-            self.__run_method_on_plugins(
-                "apply_taxes_to_shipping", default_value, price, shipping_address
-            ),
-            price.currency,
+        return self.__run_method_on_plugins(
+            "apply_taxes_to_shipping", default_value, price, shipping_address
         )
 
     def apply_taxes_to_shipping_price_range(self, prices: MoneyRange, country: Country):
@@ -228,11 +203,8 @@ class PluginsManager(PaymentInterface):
         default_value = quantize_price(
             TaxedMoneyRange(start=start, stop=stop), start.currency
         )
-        return quantize_price(
-            self.__run_method_on_plugins(
-                "apply_taxes_to_shipping_price_range", default_value, prices, country
-            ),
-            start.currency,
+        return self.__run_method_on_plugins(
+            "apply_taxes_to_shipping_price_range", default_value, prices, country
         )
 
     def preprocess_order_creation(
@@ -255,24 +227,6 @@ class PluginsManager(PaymentInterface):
         default_value = None
         return self.__run_method_on_plugins("order_created", default_value, order)
 
-    def invoice_request(
-        self, order: "Order", invoice: "Invoice", number: Optional[str]
-    ):
-        default_value = None
-        return self.__run_method_on_plugins(
-            "invoice_request", default_value, order, invoice, number
-        )
-
-    def invoice_delete(self, invoice: "Invoice"):
-        default_value = None
-        return self.__run_method_on_plugins("invoice_delete", default_value, invoice)
-
-    def invoice_sent(self, invoice: "Invoice", email: str):
-        default_value = None
-        return self.__run_method_on_plugins(
-            "invoice_sent", default_value, invoice, email
-        )
-
     def order_fully_paid(self, order: "Order"):
         default_value = None
         return self.__run_method_on_plugins("order_fully_paid", default_value, order)
@@ -294,21 +248,6 @@ class PluginsManager(PaymentInterface):
         return self.__run_method_on_plugins(
             "fulfillment_created", default_value, fulfillment
         )
-
-    # Deprecated. This method will be removed in Saleor 3.0
-    def checkout_quantity_changed(self, checkout: "Checkout"):
-        default_value = None
-        return self.__run_method_on_plugins(
-            "checkout_quantity_changed", default_value, checkout
-        )
-
-    def checkout_created(self, checkout: "Checkout"):
-        default_value = None
-        return self.__run_method_on_plugins("checkout_created", default_value, checkout)
-
-    def checkout_updated(self, checkout: "Checkout"):
-        default_value = None
-        return self.__run_method_on_plugins("checkout_updated", default_value, checkout)
 
     def authorize_payment(
         self, gateway: str, payment_information: "PaymentData"
@@ -346,16 +285,6 @@ class PluginsManager(PaymentInterface):
         method_name = "process_payment"
         return self.__run_payment_method(gateway, method_name, payment_information)
 
-    def token_is_required_as_payment_input(self, gateway) -> bool:
-        method_name = "token_is_required_as_payment_input"
-        default_value = True
-        gtw = self.get_plugin(gateway)
-        if gtw is not None:
-            return self.__run_method_on_single_plugin(
-                gtw, method_name, previous_value=default_value,
-            )
-        return default_value
-
     def get_client_token(self, gateway, token_config: "TokenConfig") -> str:
         method_name = "get_client_token"
         default_value = None
@@ -380,41 +309,33 @@ class PluginsManager(PaymentInterface):
             plugins = self.plugins
         return [plugin for plugin in plugins if plugin.active]
 
-    def list_payment_plugin(self, active_only: bool = False) -> Dict[str, "BasePlugin"]:
+    def list_payment_plugin_names(self, active_only: bool = False) -> List[tuple]:
         payment_method = "process_payment"
         plugins = self.plugins
         if active_only:
             plugins = self.get_active_plugins()
-        return {
-            plugin.PLUGIN_ID: plugin
+        return [
+            (plugin.PLUGIN_ID, plugin.PLUGIN_NAME)
             for plugin in plugins
             if payment_method in type(plugin).__dict__
-        }
+        ]
 
-    def list_payment_gateways(
-        self, currency: Optional[str] = None, active_only: bool = True
-    ) -> List["PaymentGateway"]:
-        payment_plugins = self.list_payment_plugin(active_only=active_only)
-        # if currency is given return only gateways which support given currency
-        gateways = []
-        for plugin in payment_plugins.values():
-            gateway = plugin.get_payment_gateway(currency=currency, previous_value=None)
-            if gateway:
-                gateways.append(gateway)
-        return gateways
+    def list_payment_gateways(self, active_only: bool = True) -> List[dict]:
+        payment_plugins = self.list_payment_plugin_names(active_only=active_only)
+        return [
+            {
+                "id": plugin_id,
+                "name": plugin_name,
+                "config": self.__get_payment_config(plugin_id),
+            }
+            for plugin_id, plugin_name in payment_plugins
+        ]
 
-    def checkout_available_payment_gateways(
-        self, checkout: "Checkout",
-    ) -> List["PaymentGateway"]:
-        payment_plugins = self.list_payment_plugin(active_only=True)
-        gateways = []
-        for plugin in payment_plugins.values():
-            gateway = plugin.get_payment_gateway_for_checkout(
-                checkout, previous_value=None
-            )
-            if gateway:
-                gateways.append(gateway)
-        return gateways
+    def __get_payment_config(self, gateway: str) -> List[dict]:
+        method_name = "get_payment_config"
+        default_value: list = []
+        gtw = self.get_plugin(gateway)
+        return self.__run_method_on_single_plugin(gtw, method_name, default_value)
 
     def __run_payment_method(
         self,
@@ -494,20 +415,6 @@ class PluginsManager(PaymentInterface):
     def fetch_taxes_data(self) -> bool:
         default_value = False
         return self.__run_method_on_plugins("fetch_taxes_data", default_value)
-
-    def webhook(self, request: WSGIRequest, plugin_id: str) -> HttpResponse:
-        split_path = request.path.split(plugin_id, maxsplit=1)
-        path = None
-        if len(split_path) == 2:
-            path = split_path[1]
-
-        default_value = HttpResponseNotFound()
-        plugin = self.get_plugin(plugin_id)
-        if not plugin:
-            return default_value
-        return self.__run_method_on_single_plugin(
-            plugin, "webhook", default_value, request, path
-        )
 
 
 def get_plugins_manager(

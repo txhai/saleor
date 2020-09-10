@@ -32,16 +32,11 @@ def resolve_attribute_value_type(attribute_value):
 class AttributeValue(CountableDjangoObjectType):
     name = graphene.String(description=AttributeValueDescriptions.NAME)
     slug = graphene.String(description=AttributeValueDescriptions.SLUG)
-    type = AttributeValueType(
-        description=AttributeValueDescriptions.TYPE,
-        deprecation_reason=(
-            "Use the `inputType` field to determine the type of attribute's value. "
-            "This field will be removed after 2020-07-31."
-        ),
-    )
+    type = AttributeValueType(description=AttributeValueDescriptions.TYPE)
     translation = TranslationField(
         AttributeValueTranslation, type_name="attribute value"
     )
+
     input_type = AttributeInputTypeEnum(description=AttributeDescriptions.INPUT_TYPE)
 
     class Meta:
